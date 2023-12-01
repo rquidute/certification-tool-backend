@@ -83,6 +83,7 @@ class PythonTestCase(TestCase):
         self, logger: Any, logs: str, duration: int, request: Any, received: Any
     ) -> None:
         # TODO Handle Logs properly
+        self.mark_step_failure(f"Python test step failure: {logs}")
         self.next_step()
 
     def step_unknown(self) -> None:
