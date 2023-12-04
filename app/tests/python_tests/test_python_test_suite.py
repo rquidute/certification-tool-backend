@@ -81,8 +81,11 @@ async def test_suite_setup_log_python_version() -> None:
             target="test_collections.sdk_tests.support.python_testing.models.test_suite"
             ".PythonTestSuite.pics",
             new_callable=PICS,
+        ), mock.patch.object(
+            target=suite_instance, attribute="commission_device"
         ):
             await suite_instance.setup()
+
             logger_info.assert_called()
             logger_info.assert_any_call(f"Python Test Version: {python_test_version}")
 
@@ -110,11 +113,14 @@ async def test_suite_setup_without_pics() -> None:
             target=chip_tool, attribute="set_pics"
         ) as mock_set_pics, mock.patch.object(
             target=chip_tool, attribute="reset_pics_state"
-        ) as mock_reset_pics_state:
+        ) as mock_reset_pics_state, mock.patch.object(
+            target=suite_instance, attribute="commission_device"
+        ) as mock_commission_device:
             await suite_instance.setup()
 
         mock_set_pics.assert_not_called()
         mock_reset_pics_state.assert_called_once()
+        mock_commission_device.called_once()
 
 
 @pytest.mark.asyncio
@@ -140,11 +146,14 @@ async def test_suite_setup_with_pics() -> None:
             target=chip_tool, attribute="set_pics"
         ) as mock_set_pics, mock.patch.object(
             target=chip_tool, attribute="reset_pics_state"
-        ) as mock_reset_pics_state:
+        ) as mock_reset_pics_state, mock.patch.object(
+            target=suite_instance, attribute="commission_device"
+        ) as mock_commission_device:
             await suite_instance.setup()
 
         mock_set_pics.assert_called_once()
         mock_reset_pics_state.assert_not_called()
+        mock_commission_device.called_once()
 
 
 @pytest.mark.asyncio
