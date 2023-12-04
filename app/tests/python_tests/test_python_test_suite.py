@@ -29,6 +29,10 @@ from test_collections.sdk_tests.support.python_testing.models.test_suite import 
     PythonTestSuite,
     SuiteType,
 )
+from test_collections.sdk_tests.support.python_testing.models.utils import (
+    EXECUTABLE,
+    RUNNER_CLASS_PATH,
+)
 
 
 def test_python_suite_class_factory_name() -> None:
@@ -154,6 +158,37 @@ async def test_suite_setup_with_pics() -> None:
         mock_set_pics.assert_called_once()
         mock_reset_pics_state.assert_not_called()
         mock_commission_device.called_once()
+
+
+@pytest.mark.asyncio
+async def test_commission_device() -> None:
+    chip_tool: ChipTool = ChipTool()
+
+    command_args = ["arg1", "arg2", "arg3"]
+    expected_command = [f"{RUNNER_CLASS_PATH} commission"]
+    expected_command.extend(command_args)
+
+    suite = PythonTestSuite(TestSuiteExecution())
+
+    with mock.patch.object(target=chip_tool, attribute="start_container"), mock.patch(
+        target="test_collections.sdk_tests.support.python_testing.models.test_suite"
+        ".PythonTestSuite.config"
+    ), mock.patch.object(
+        target=chip_tool, attribute="send_command"
+    ) as mock_send_command, mock.patch(
+        target="test_collections.sdk_tests.support.python_testing.models.test_suite"
+        ".generate_command_arguments",
+        return_value=command_args,
+    ), mock.patch(
+        target="test_collections.sdk_tests.support.python_testing.models.test_suite"
+        ".handle_logs"
+    ) as mock_handle_logs:
+        suite.commission_device()
+
+    mock_send_command.assert_called_once_with(
+        expected_command, prefix=EXECUTABLE, is_stream=True, is_socket=False
+    )
+    mock_handle_logs.assert_called_once()
 
 
 @pytest.mark.asyncio
