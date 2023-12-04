@@ -21,7 +21,12 @@ import importlib
 import sys
 from multiprocessing.managers import BaseManager
 
-import matter_testing_support
+from matter_testing_support import (
+    CommissionDeviceTest,
+    MatterTestConfig,
+    parse_matter_test_args,
+    run_tests,
+)
 
 
 class TestRunnerHooks:
@@ -31,14 +36,16 @@ class TestRunnerHooks:
 def main() -> None:
     sys.path.append("/root/python_testing")
 
-    test_name = sys.argv[1]
+    test_args = sys.argv[2:]
+    config = parse_matter_test_args(test_args)
 
-    config_options = sys.argv[2:]
-    config = matter_testing_support.parse_matter_test_args(config_options)
+    if sys.argv[1] == "commission":
+        commission(config)
+    else:
+        run_test(test_name=sys.argv[1], config=config)
 
-    if config is None:
-        raise ValueError(f"Not a valid test id: {test_name}")
 
+def run_test(test_name: str, config: MatterTestConfig) -> None:
     module = importlib.import_module(test_name)
     TestClassReference = getattr(module, test_name)
 
@@ -47,7 +54,12 @@ def main() -> None:
     manager.connect()
     test_runner_hooks = manager.TestRunnerHooks()  # shared object proxy # type: ignore
 
-    matter_testing_support.run_tests(TestClassReference, config, test_runner_hooks)
+    run_tests(TestClassReference, config, test_runner_hooks)
+
+
+def commission(config: MatterTestConfig) -> None:
+    config.commission_only = True
+    run_tests(CommissionDeviceTest, config, None)
 
 
 if __name__ == "__main__":

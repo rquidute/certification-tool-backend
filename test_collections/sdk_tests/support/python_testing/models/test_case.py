@@ -25,14 +25,10 @@ from app.test_engine.models import TestCase, TestStep
 
 from .python_test_models import PythonTest
 from .python_testing_hooks_proxy import SDKPythonTestRunnerHooks
+from .utils import EXECUTABLE, RUNNER_CLASS_PATH, generate_command_arguments
 
 # Custom type variable used to annotate the factory method in PythonTestCase.
 T = TypeVar("T", bound="PythonTestCase")
-
-# Command line params
-RUNNER_CLASS = "test_harness_client.py"
-RUNNER_CLASS_PATH = "/root/python_testing/"
-EXECUTABLE = "python3"
 
 
 class PythonTestCase(TestCase):
@@ -139,59 +135,6 @@ class PythonTestCase(TestCase):
     async def cleanup(self) -> None:
         logger.info("Test Cleanup")
 
-    def __generate_command_arguments(self) -> list:
-        # All valid arguments for python test
-        valid_args = [
-            "ble_interface_id",
-            "commissioning_method",
-            "controller_node_id",
-            "discriminator",
-            "endpoint",
-            "logs_path",
-            "PICS",
-            "paa_trust_store_path",
-            "timeout",
-            "trace_to",
-            "int_arg",
-            "float_arg",
-            "string_arg",
-            "json_arg",
-            "hex_arg",
-            "bool_arg",
-            "storage_path",
-            "passcode",
-            "dut-node-id",
-        ]
-
-        dut_config = self.project.config.dut_config
-        test_parameters = self.project.config.test_parameters
-
-        pairing_mode = (
-            "on-network"
-            if dut_config.pairing_mode == "onnetwork"
-            else dut_config.pairing_mode
-        )
-
-        arguments = []
-        # Retrieve arguments from dut_config
-        arguments.append(f"--discriminator {dut_config.discriminator}")
-        arguments.append(f"--passcode {dut_config.setup_code}")
-        arguments.append(f"--commissioning-method {pairing_mode}")
-
-        # Retrieve arguments from test_parameters
-
-        if test_parameters:
-            for name, value in test_parameters.items():
-                if name in valid_args:
-                    if str(value) != "":
-                        arguments.append(f"--{name.replace('_','-')} {str(value)}")
-                    else:
-                        arguments.append(f"--{name.replace('_','-')} " "")
-                else:
-                    logger.warning(f"Argument {name} is not valid")
-
-        return arguments
-
     async def execute(self) -> None:
         try:
             logger.info("Running Python Test: " + self.metadata["title"])
@@ -201,12 +144,14 @@ class PythonTestCase(TestCase):
             manager.start()
             test_runner_hooks = manager.TestRunnerHooks()  # type: ignore
 
-            runner_class = RUNNER_CLASS_PATH + RUNNER_CLASS
-            command = [f"{runner_class} {self.metadata['title']}"]
+            command = [f"{RUNNER_CLASS_PATH} {self.metadata['title']}"]
 
             # Generate the command argument by getting the test_parameters from
             # project configuration
-            command_arguments = self.__generate_command_arguments()
+            # comissioning method is omitted because it's handled by the test suite
+            command_arguments = generate_command_arguments(
+                config=self.config, omit_commissioning_method=True
+            )
             command.extend(command_arguments)
 
             if self.chip_tool.pics_file_created:
@@ -229,7 +174,7 @@ class PythonTestCase(TestCase):
                 self.__handle_update(update)
                 await sleep(0.001)
         finally:
-            pass
+            manager.shutdown()
 
     def __handle_update(self, update: dict) -> None:
         for func_name, kwargs in update.items():
