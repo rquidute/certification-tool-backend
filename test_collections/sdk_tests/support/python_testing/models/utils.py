@@ -52,7 +52,7 @@ def generate_command_arguments(
         "bool_arg",
         "storage_path",
         "passcode",
-        "dut-node-id",
+        "dut_node_id",
     ]
 
     dut_config = config.dut_config
@@ -72,7 +72,6 @@ def generate_command_arguments(
         arguments.append(f"--commissioning-method {pairing_mode}")
 
     # Retrieve arguments from test_parameters
-
     if test_parameters:
         for name, value in test_parameters.items():
             if name in valid_args:
