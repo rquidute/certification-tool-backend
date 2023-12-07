@@ -57,6 +57,7 @@ def __parse_test_case_from_class(
     # Currently config is not configured in Python Testing
     tc_config: dict = {}
 
+    # Methods template
     desc_method_name = "desc_" + tc_name
     steps_method_name = "steps_" + tc_name
     pics_method_name = "pics_" + tc_name
@@ -71,10 +72,19 @@ def __parse_test_case_from_class(
 
         pics_method = next(m for m in methods if pics_method_name in m.name)
         tc_pics = __retrieve_pics(pics_method)
-    except StopIteration as si:  # Raised when `next` doesn't find a matching method
-        raise PythonParserException(
-            f"{path} did not contain valid definition for {tc_name}"
-        ) from si
+    except StopIteration:  # Raised when `next` doesn't find a matching method
+        # If the python test does not implement any of the tenplate method,
+        # the test case will be presented in UI and the whole test case will be
+        # executed as one step
+        return PythonTest(
+            name=tc_name,
+            description=tc_name,
+            steps=[],
+            config=tc_config,
+            PICS=[],
+            path=path,
+            type=MatterTestType.AUTOMATED,
+        )
 
     return PythonTest(
         name=tc_name,
