@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from app.models import TestStateEnum
 from app.models.test_run_log_entry import TestRunLogEntry as TestRunLogEntryModel
 from app.schemas.test_run_log_entry import TestRunLogEntry
-from app.test_engine.test_db_observer import TestDBObserver
+from app.test_engine.test_db_observer import LOG_INSERT_CHUNK_SIZE, TestDBObserver
 from app.test_engine.test_script_manager import TestScriptManager
 from app.tests.utils.test_run_execution import (
     create_test_run_execution_with_some_test_cases,
@@ -328,7 +328,12 @@ async def test_test_db_observer_appends_only_new_log_entries(db: Session) -> Non
     test_db_observer.dispatch(test_run)
     await test_db_observer.apply_updates()
 
-    first_row = test_run_execution.log[0]
+    first_id = (
+        db.query(TestRunLogEntryModel)
+        .filter_by(test_run_execution_id=test_run_execution.id, seq=0)
+        .one()
+        .id
+    )
 
     test_run.append_log_entries(
         [TestRunLogEntry(level="INFO", timestamp=2.0, message="second")]
@@ -336,15 +341,8 @@ async def test_test_db_observer_appends_only_new_log_entries(db: Session) -> Non
     test_db_observer.dispatch(test_run)
     await test_db_observer.apply_updates()
 
-    # The already-persisted entry is the same row, not a rewritten copy, and
-    # seq reflects the order the entries were produced in.
-    assert test_run_execution.log[0] is first_row
-    assert [(e.seq, e.message) for e in test_run_execution.log] == [
-        (0, "first"),
-        (1, "second"),
-    ]
-
-    # ...and that is what actually landed in the table.
+    # The already-persisted entry is not rewritten, and seq reflects the order
+    # the entries were produced in.
     persisted = (
         db.query(TestRunLogEntryModel)
         .filter_by(test_run_execution_id=test_run_execution.id)
@@ -352,6 +350,7 @@ async def test_test_db_observer_appends_only_new_log_entries(db: Session) -> Non
         .all()
     )
     assert [(e.seq, e.message) for e in persisted] == [(0, "first"), (1, "second")]
+    assert persisted[0].id == first_id
 
 
 @pytest.mark.asyncio
@@ -379,7 +378,45 @@ async def test_test_db_observer_keeps_entries_of_a_resumed_run(db: Session) -> N
     test_db_observer.dispatch(test_run)
     await test_db_observer.apply_updates()
 
-    assert [e.message for e in test_run_execution.log] == [
-        "earlier attempt",
-        "new attempt",
+    persisted = (
+        db.query(TestRunLogEntryModel)
+        .filter_by(test_run_execution_id=test_run_execution.id)
+        .order_by(TestRunLogEntryModel.seq)
+        .all()
+    )
+    assert [(e.seq, e.message) for e in persisted] == [
+        (0, "earlier attempt"),
+        (1, "new attempt"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_test_db_observer_bulk_inserts_in_chunks(db: Session) -> None:
+    """A backlog larger than LOG_INSERT_CHUNK_SIZE is split across several
+    INSERTs, with seq continuous across the chunk boundaries."""
+    test_script_manager = TestScriptManager()
+    test_db_observer = TestDBObserver()
+
+    test_run_execution = create_test_run_execution_with_some_test_cases(db=db)
+    test_run = test_script_manager.get_test_run(db, test_run_execution)
+    test_run.state = TestStateEnum.EXECUTING
+
+    total = LOG_INSERT_CHUNK_SIZE * 2 + 7
+    test_run.append_log_entries(
+        [
+            TestRunLogEntry(level="INFO", timestamp=float(i), message=f"m{i}")
+            for i in range(total)
+        ]
+    )
+    test_db_observer.dispatch(test_run)
+    await test_db_observer.apply_updates()
+
+    persisted = (
+        db.query(TestRunLogEntryModel)
+        .filter_by(test_run_execution_id=test_run_execution.id)
+        .order_by(TestRunLogEntryModel.seq)
+        .all()
+    )
+    assert [(e.seq, e.message) for e in persisted] == [
+        (i, f"m{i}") for i in range(total)
     ]
