@@ -26,9 +26,11 @@ router = APIRouter()
 
 
 @router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket) -> None:
+async def websocket_endpoint(websocket: WebSocket, log_records: bool = True) -> None:
     socket_connection_manager = SocketConnectionManager()
-    connection = WebSocketConnection(websocket, WebSocketTypeEnum.MAIN)
+    connection = WebSocketConnection(
+        websocket, WebSocketTypeEnum.MAIN, receive_log_records=log_records
+    )
     await socket_connection_manager.connect(connection)
     try:
         while True:

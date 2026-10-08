@@ -179,6 +179,54 @@ async def test_broadcast_message_data_types() -> None:
 
 
 @pytest.mark.asyncio
+async def test_broadcast_log_records_respects_client_opt_out() -> None:
+    """Clients that connected with receive_log_records=False must not get
+    TEST_LOG_RECORDS messages (nor should the chunk be encoded for nobody),
+    while still receiving every other message type."""
+    log_message = {
+        MessageKeysEnum.TYPE: MessageTypeEnum.TEST_LOG_RECORDS,
+        MessageKeysEnum.PAYLOAD: [{"message": "line"}],
+    }
+    other_message = {
+        MessageKeysEnum.TYPE: MessageTypeEnum.INVALID_MESSAGE,
+        MessageKeysEnum.PAYLOAD: "other",
+    }
+
+    socket_connection_manager.active_connections.clear()
+    wants_logs = mock.MagicMock(spec=WebSocket)
+    no_logs = mock.MagicMock(spec=WebSocket)
+    socket_connection_manager.active_connections.extend(
+        [
+            WebSocketConnection(wants_logs, WebSocketTypeEnum.MAIN),
+            WebSocketConnection(
+                no_logs, WebSocketTypeEnum.MAIN, receive_log_records=False
+            ),
+        ]
+    )
+
+    await socket_connection_manager.broadcast(message=log_message)
+    wants_logs.send_text.assert_called_once_with(json.dumps(log_message))
+    no_logs.send_text.assert_not_called()
+
+    await socket_connection_manager.broadcast(message=other_message)
+    no_logs.send_text.assert_called_once_with(json.dumps(other_message))
+
+    # Every client opted out: nothing is encoded or sent at all.
+    socket_connection_manager.active_connections.clear()
+    socket_connection_manager.active_connections.append(
+        WebSocketConnection(no_logs, WebSocketTypeEnum.MAIN, receive_log_records=False)
+    )
+    no_logs.send_text.reset_mock()
+    with mock.patch("app.socket_connection_manager.json.dumps") as dumps:
+        await socket_connection_manager.broadcast(message=log_message)
+    dumps.assert_not_called()
+    no_logs.send_text.assert_not_called()
+
+    # Cleanup
+    socket_connection_manager.active_connections.clear()
+
+
+@pytest.mark.asyncio
 async def test_broadcast_failed_for_ConnectionClosed() -> None:
     """
     Tests if broadcast() is able to handle the event where the connection is closed.

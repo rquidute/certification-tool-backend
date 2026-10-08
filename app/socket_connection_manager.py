@@ -128,10 +128,16 @@ class SocketConnectionManager(object, metaclass=Singleton):
 
     async def broadcast(self, message: Union[str, dict, list]) -> None:
         is_log = (
-            perf_timing.ENABLED
-            and isinstance(message, dict)
+            isinstance(message, dict)
             and message.get(MessageKeysEnum.TYPE) == MessageTypeEnum.TEST_LOG_RECORDS
         )
+        if is_log and not any(
+            c.type == WebSocketTypeEnum.MAIN and c.receive_log_records
+            for c in self.active_connections
+        ):
+            # Nobody wants the log records (no client, or every client opted
+            # out): skip encoding the chunk, which is pure overhead then.
+            return
         # Convert dictionaries and lists to string using json
         if isinstance(message, dict) or isinstance(message, list):
             with perf_timing.timer("ws.json_log" if is_log else "ws.json_other"):
@@ -141,6 +147,8 @@ class SocketConnectionManager(object, metaclass=Singleton):
         # Iterate over a copy: disconnect() below mutates active_connections.
         for connection in list(self.active_connections):
             if connection.type == WebSocketTypeEnum.MAIN:
+                if is_log and not connection.receive_log_records:
+                    continue
                 websocket = connection.websocket
                 try:
                     send_timer = "ws.send_log" if is_log else "ws.send_other"
