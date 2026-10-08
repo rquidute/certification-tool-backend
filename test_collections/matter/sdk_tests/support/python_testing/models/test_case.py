@@ -26,6 +26,7 @@ from app.constants.shared_constants import NFC_PAIRING_MODES
 from app.core.config import settings
 from app.models import TestCaseExecution
 from app.schemas.test_environment_config import get_th_config_value
+from app import perf_timing
 from app.test_engine.logger import PYTHON_TEST_LEVEL
 from app.test_engine.logger import test_engine_logger as logger
 from app.test_engine.models import TestCase, TestStep
@@ -250,11 +251,13 @@ class PythonTestCase(TestCase, UserPromptSupport):
                 # Send logs in batches to avoid overwhelming the UI
                 for i in range(0, len(step_logs), REPLAY_LOG_BATCH_SIZE):
                     batch = step_logs[i : i + REPLAY_LOG_BATCH_SIZE]
-                    for line in batch:
-                        logger.log(PYTHON_TEST_LEVEL, line)
+                    with perf_timing.timer("replay.logger_calls", len(batch)):
+                        for line in batch:
+                            logger.log(PYTHON_TEST_LEVEL, line)
                     # Brief yield between batches so other tasks can run
                     if i + REPLAY_LOG_BATCH_SIZE < len(step_logs):
-                        await sleep(REPLAY_LOG_YIELD_DELAY)
+                        with perf_timing.timer("replay.yield_sleep"):
+                            await sleep(REPLAY_LOG_YIELD_DELAY)
 
                 # Update last logged position with the end position from extraction
                 if end_pos > self._last_logged_position:
@@ -616,10 +619,12 @@ class PythonTestCase(TestCase, UserPromptSupport):
                     remaining_lines = remaining_content.split("\n")
                     for i in range(0, len(remaining_lines), REPLAY_LOG_BATCH_SIZE):
                         batch = remaining_lines[i : i + REPLAY_LOG_BATCH_SIZE]
-                        for line in batch:
-                            logger.log(PYTHON_TEST_LEVEL, line)
+                        with perf_timing.timer("replay.logger_calls", len(batch)):
+                            for line in batch:
+                                logger.log(PYTHON_TEST_LEVEL, line)
                         if i + REPLAY_LOG_BATCH_SIZE < len(remaining_lines):
-                            await sleep(REPLAY_LOG_YIELD_DELAY)
+                            with perf_timing.timer("replay.yield_sleep"):
+                                await sleep(REPLAY_LOG_YIELD_DELAY)
                     logger.info("---- End of remaining logs ----")
 
             # Mark as logged to prevent duplicate calls
@@ -662,17 +667,32 @@ class PythonTestCase(TestCase, UserPromptSupport):
                 # file as one in-memory list before logging/pacing even
                 # starts.
                 batch_count = 0
+                _t0 = perf_timing.now()
                 for line in f:
                     logger.log(PYTHON_TEST_LEVEL, line.rstrip("\n"))
                     batch_count += 1
                     if batch_count >= REPLAY_LOG_BATCH_SIZE:
+                        if _t0 is not None:
+                            perf_timing.add(
+                                "replay.logger_calls",
+                                perf_timing.time.perf_counter() - _t0,
+                                batch_count,
+                            )
                         batch_count = 0
                         # Yield to the event loop between batches, so a
                         # large file doesn't monopolize it for an extended
                         # stretch in one go. A tiny real delay rather than
                         # sleep(0): see REPLAY_LOG_YIELD_DELAY's definition
                         # for why sleep(0) isn't enough here.
-                        await sleep(REPLAY_LOG_YIELD_DELAY)
+                        with perf_timing.timer("replay.yield_sleep"):
+                            await sleep(REPLAY_LOG_YIELD_DELAY)
+                        _t0 = perf_timing.now()
+                if _t0 is not None and batch_count:
+                    perf_timing.add(
+                        "replay.logger_calls",
+                        perf_timing.time.perf_counter() - _t0,
+                        batch_count,
+                    )
             logger.info("---- End of Python test logs ----")
         except (IOError, OSError) as e:
             logger.warning(f"Failed to read test output file: {e}")

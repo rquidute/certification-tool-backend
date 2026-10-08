@@ -24,6 +24,7 @@ from typing import Optional
 import loguru  # this is needed (with __future__ annotations)
 from loguru import logger
 
+from app import perf_timing
 from app.schemas.test_run_log_entry import TestRunLogEntry
 from app.test_engine.models import TestCase, TestRun, TestStep, TestSuite
 
@@ -126,6 +127,7 @@ class TestLogHandler:
         Args:
             message (Message): log message from loguru
         """
+        _t0 = perf_timing.now()
         log_entry = TestRunLogEntry(
             level=message.record["level"].name,
             timestamp=message.record["time"].timestamp(),
@@ -136,6 +138,8 @@ class TestLogHandler:
         )
         with self.__pending_log_entries_lock:
             self.__pending_log_entries.append(log_entry)
+        if _t0 is not None:
+            perf_timing.add("handler.sink", perf_timing.time.perf_counter() - _t0)
 
     async def __periodically_process_entries(self) -> None:
         """This will process the pending entries at a pre-defined interval."""
@@ -160,4 +164,5 @@ class TestLogHandler:
             entries = self.__pending_log_entries
             self.__pending_log_entries = []
 
-        self.__test_run.append_log_entries(entries)
+        with perf_timing.timer("handler.append_and_notify", len(entries)):
+            self.__test_run.append_log_entries(entries)

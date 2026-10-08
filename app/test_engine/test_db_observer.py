@@ -21,6 +21,7 @@ from loguru import logger
 from sqlalchemy import func, insert, inspect, select
 from sqlalchemy.orm import Session
 
+from app import perf_timing
 from app.db.session import get_db
 from app.models import TestStateEnum
 from app.models.test_case_execution import TestCaseExecution
@@ -123,7 +124,8 @@ class TestDBObserver(Observer):
             # alongside new rows, so there is always a pending object to
             # commit through.
             session = self.__session_for(pending)
-            await self.__bulk_insert_log_rows(session, log_rows)
+            with perf_timing.timer("db.insert_rows", len(log_rows)):
+                await self.__bulk_insert_log_rows(session, log_rows)
 
         for data in pending.values():
             await self.__save(data)
@@ -173,6 +175,7 @@ class TestDBObserver(Observer):
         # the run instead of rewriting the whole log on every flush. seq is
         # assigned here (what ordering_list would do on an ORM append), since
         # the bulk path bypasses the relationship.
+        _t0 = perf_timing.now()
         new_entries = observable.log_entries_since(self.__entries_written)
         if new_entries:
             if self.__next_seq is None:
@@ -191,6 +194,12 @@ class TestDBObserver(Observer):
                 for i, entry in enumerate(new_entries)
             )
             self.__next_seq += len(new_entries)
+        if _t0 is not None and new_entries:
+            perf_timing.add(
+                "db.stage_rows",
+                perf_timing.time.perf_counter() - _t0,
+                len(new_entries),
+            )
         self.__entries_written += len(new_entries)
         # The entries are now staged as rows, so TestRun may drop them from
         # memory (always report, even with nothing new: see release_log()).
@@ -280,7 +289,8 @@ class TestDBObserver(Observer):
         # rather than asyncio.to_thread: dispatch() mutates this Session's ORM
         # objects at any point while a flush is running, and Sessions aren't
         # thread-safe, so committing from a worker would be a real race.
-        session.commit()
+        with perf_timing.timer("db.commit"):
+            session.commit()
         logger.debug(
             f"Saved {execution_obj.__class__} {execution_obj.id}"
             f" with state {execution_obj.state}"
