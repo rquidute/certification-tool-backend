@@ -26,6 +26,7 @@ from loguru import logger
 from starlette.websockets import WebSocketState
 from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK
 
+from app import perf_timing
 from app.constants.shared_constants import MessageKeysEnum, MessageTypeEnum
 from app.constants.websockets_constants import (
     INVALID_JSON_ERROR_STR,
@@ -126,15 +127,25 @@ class SocketConnectionManager(object, metaclass=Singleton):
         await websocket.send_text(message)
 
     async def broadcast(self, message: Union[str, dict, list]) -> None:
+        is_log = (
+            perf_timing.ENABLED
+            and isinstance(message, dict)
+            and message.get(MessageKeysEnum.TYPE) == MessageTypeEnum.TEST_LOG_RECORDS
+        )
         # Convert dictionaries and lists to string using json
         if isinstance(message, dict) or isinstance(message, list):
-            message = json.dumps(message, default=pydantic.json.pydantic_encoder)
+            with perf_timing.timer("ws.json_log" if is_log else "ws.json_other"):
+                message = json.dumps(message, default=pydantic.json.pydantic_encoder)
+        if is_log:
+            perf_timing.add_extra("ws.log_bytes_serialized", len(message))
         # Iterate over a copy: disconnect() below mutates active_connections.
         for connection in list(self.active_connections):
             if connection.type == WebSocketTypeEnum.MAIN:
                 websocket = connection.websocket
                 try:
-                    await websocket.send_text(message)
+                    send_timer = "ws.send_log" if is_log else "ws.send_other"
+                    with perf_timing.timer(send_timer):
+                        await websocket.send_text(message)
                 # Starlette raises websockets.exceptions.ConnectionClosedOK
                 # when trying to send to a closed websocket.
                 # https://github.com/encode/starlette/issues/759

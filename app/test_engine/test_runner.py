@@ -28,6 +28,7 @@ from app.test_engine import (
     TEST_ENGINE_NOT_ACTIVE_MESSAGE,
     TEST_RUN_ALREADY_EXECUTED_MESSAGE,
 )
+from app import perf_timing
 from app.test_engine.logger import test_engine_logger
 from app.test_engine.test_db_observer import TestDBObserver
 from app.test_engine.test_log_handler import TestLogHandler
@@ -156,6 +157,7 @@ class TestRunner(object, metaclass=Singleton):
                 logger.error("Test Run is not loaded")
                 return
 
+            perf_timing.reset()
             log_handler = TestLogHandler(self.test_run)
             test_engine_logger.info("Run Test Runner is Ready")
             test_engine_logger.info(f"TH Version: {version_information.version}")
@@ -176,6 +178,10 @@ class TestRunner(object, metaclass=Singleton):
 
             try:
                 await self.test_run.run()
+
+                if perf_timing.ENABLED:
+                    for line in perf_timing.summary():
+                        test_engine_logger.info(line)
 
                 # Ensure all log messages are sent out
                 await log_handler.finish()

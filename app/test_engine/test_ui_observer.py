@@ -19,6 +19,7 @@ from typing import Any, Optional, Union
 
 from loguru import logger
 
+from app import perf_timing
 from app.constants.shared_constants import (
     MessageKeysEnum,
     MessageTypeEnum,
@@ -80,7 +81,8 @@ class TestUIObserver(Observer):
     def __onTestRunUpdate(self, observable: TestRun) -> None:
         logger.debug("Test Run Observer received", observable)
         self.__handle_test_run_state(observable)
-        self.__handle_test_run_log(observable)
+        with perf_timing.timer("ui.dispatch_log"):
+            self.__handle_test_run_log(observable)
 
     def __handle_test_run_state(self, test_run: TestRun) -> None:
         """Send update to UI when test run state changes."""
