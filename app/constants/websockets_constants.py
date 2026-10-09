@@ -35,16 +35,6 @@ class WebSocketTypeEnum(str, Enum):
 
 
 class WebSocketConnection:
-    def __init__(
-        self,
-        websocket: WebSocket,
-        socket_type: WebSocketTypeEnum,
-        receive_log_records: bool = True,
-    ) -> None:
+    def __init__(self, websocket: WebSocket, socket_type: WebSocketTypeEnum) -> None:
         self.websocket = websocket
         self.type = socket_type
-        # Clients that don't display the live log (e.g. the CLI run with
-        # --no-streaming, which reads the log back from the DB afterwards) can
-        # opt out of TEST_LOG_RECORDS messages, so the backend neither encodes
-        # nor sends them and the client doesn't have to parse them.
-        self.receive_log_records = receive_log_records
