@@ -29,6 +29,7 @@ from app.test_engine import (
     TEST_RUN_ALREADY_EXECUTED_MESSAGE,
 )
 from app import perf_timing
+from app.core.config import settings
 from app.test_engine.logger import test_engine_logger
 from app.test_engine.test_db_observer import TestDBObserver
 from app.test_engine.test_log_handler import TestLogHandler
@@ -163,6 +164,10 @@ class TestRunner(object, metaclass=Singleton):
             test_engine_logger.info(f"TH Version: {version_information.version}")
             test_engine_logger.info(f"TH SHA: {version_information.sha}")
             test_engine_logger.info(f"TH SDK SHA: {version_information.sdk_sha}")
+            if perf_timing.ENABLED:
+                test_engine_logger.info(
+                    f"PERF logging_enqueue: {settings.LOGGING_ENQUEUE}"
+                )
             test_engine_logger.info(f"Project config:\n{self.test_run.config}")
             test_engine_logger.info(f"Project PICS:\n{self.test_run.pics}")
 
